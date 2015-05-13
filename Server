@@ -1,0 +1,183 @@
+import java.net.*;
+import java.io.*; 
+import java.sql.*;
+class SrvRecv implements Runnable
+{
+    int port;
+    InetAddress address;
+    public void run()
+  	{
+            try
+            {
+                Class.forName("oracle.jdbc.driver.OracleDriver");
+                //System.out.println("Hello");
+                Connection con= DriverManager.getConnection("jdbc:oracle:thin:@localhost:1521:XE","hr","asdf");
+                Statement st=con.createStatement();
+                DatagramSocket clientSocket = new DatagramSocket(9876);
+                System.out.println("Hello");
+                byte[] receiveData = new byte[1024];
+                while(true)
+                {
+                    DatagramPacket packet = new DatagramPacket(receiveData,receiveData.length);
+                    clientSocket.receive(packet);
+                    String s=new String(packet.getData());
+                    String s1[]=s.split("x");
+                    //System.out.println(s1[0]);
+                    String useraddress=packet.getAddress().toString();
+                    int userport=packet.getPort();
+                    
+                    
+                    //String p;
+                    String a,p;
+                    String up=userport+"";
+                    ResultSet rs=st.executeQuery("Select * from router where userip='"+useraddress+"' and userport='"+up+"'");
+                    
+                    if(s1[0].substring(0,5).equals("group"))//checks if the user has presses group button
+                    {
+                        char choice=s1[0].charAt(5);
+                        setPort(choice);
+                         p=port+"";
+                        a=address.toString();
+                        if(rs.next())
+                        {
+                            //update the group
+                            System.out.println("Query1");
+                            String msg="group changed"+'x';
+                            port=Integer.parseInt(rs.getString("groupport"));
+                            //System.out.println("Query3-1");
+                            //System.out.println(rs.getString("groupip"));
+                            String add=rs.getString("groupip");
+                            //System.out.println(add);
+                            address=InetAddress.getByName(add.substring(1,add.length()));
+                            sendMlti(msg);
+                            port=userport;
+                           // address=InetAddress.getByName(useraddress);
+                            address=packet.getAddress();
+                            sendUdp(msg);
+                            
+                            st.executeQuery("update router set groupport='"+p+"' where userip='"+useraddress+"'"); 
+                            st.executeQuery("update router set groupip='"+a+"' where userip='"+useraddress+"'");
+                        }
+                        else
+                        {
+                            //add entry of the user
+                            //System.out.println("Query2");
+                            System.out.println("Add user Invoked");
+                            st.executeQuery("insert into router values('"+useraddress+"','"+up+"','"+a+"','"+p+"')");
+                            String msg="group joind"+'x';
+                            System.out.println(msg);
+                            port=userport;
+                            //address=InetAddress.getByName(useraddress);
+                            address=packet.getAddress();
+                            sendUdp(msg);
+                        }
+                        //String msg=useraddress+"has joined group"+choice;
+                        //sendMlti(msg);
+                    }
+                    else
+                    {
+                        if(rs.next())
+                        {
+                            //System.out.println("Query3");
+                            //p=rs.getString("groupport");
+                            port=Integer.parseInt(rs.getString("groupport"));
+                            System.out.println("Query3-1");
+                            System.out.println(rs.getString("groupip"));
+                            String add=rs.getString("groupip");
+                            System.out.println(add);
+                            address=InetAddress.getByName(add.substring(1,add.length()));
+                            sendMlti(s);
+                        }
+                        else
+                        {
+                            //System.out.println("Query4");
+                            port=userport;
+                            address=packet.getAddress();
+                            //address=InetAddress.getByName(useraddress);
+                            //System.out.println(address.toString());
+                            //System.out.println(userport);
+                            String msg="U need to register yourself to one of the groups by pressing one of the group buttons"+'x';
+                            sendUdp(msg);
+                        }
+                    }
+                }
+            }	
+            catch(Exception e)
+            {
+            System.out.println("Exception:"+e.getMessage());
+            }
+        }
+            void sendMlti(String s)
+         {   
+             try{
+                 System.out.println("In Send Multi");
+        //InetAddress address = InetAddress.getByName("224.2.2.3"); // Multicast address
+        if (!address.isMulticastAddress()) // Test if multicast address
+        throw new IllegalArgumentException("Not a multicast address");
+         MulticastSocket sock = new MulticastSocket(); // Multicast receiving socket  
+         sock.setTimeToLive(10);
+        byte[] data = new byte[1024]; 
+        data=s.getBytes();
+        DatagramPacket message = new DatagramPacket(data, data.length,address, port);
+        sock.send(message);
+         }
+               catch(Exception e)
+             {
+                 System.out.println("Exception");
+             }
+    }
+        void sendUdp(String s)
+        {
+            try
+        {
+        //InetAddress destAddr = InetAddress.getByName("localhost");
+            DatagramSocket sendSocket = new DatagramSocket();     
+            byte send[]=new byte[1024];
+            s=s+'x';
+            send=s.getBytes();
+            DatagramPacket packet=new DatagramPacket(send,send.length,address,port);
+            sendSocket.send(packet);
+            //System.out.println(s);
+        }
+        catch(Exception e)
+                {}
+        }
+        void setPort(char c)
+        {
+            try
+            {
+            switch(c)
+            {
+                case '1':
+                    port=5001;
+                    address=InetAddress.getByName("224.2.2.3");
+                    break;
+                case '2':
+                    port=5002;
+                    address=InetAddress.getByName("224.2.2.4");
+                    break;
+                case '3':
+                    port=5003;
+                    address=InetAddress.getByName("224.2.2.5");
+                    break;
+                case '4':
+                    port=5004;
+                    address=InetAddress.getByName("224.2.2.7");
+                    break;  
+            }
+            }
+            catch(Exception e)
+            {}
+        }
+}
+
+public class Server
+{
+public static void main(String[] args) throws Exception 
+{
+SrvRecv r=new SrvRecv();
+Thread t=new Thread(r);
+t.start();
+t.join();
+}
+}
